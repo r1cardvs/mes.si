@@ -4,12 +4,28 @@ const pool = new Pool({
   connectionString: process.env.DATABASE_URL || 'postgres://mes_user:mes_pass@localhost:5432/mes_si'
 });
 
-async function createRoute({ slug, name, targetUrl, httpMethod = 'POST', fieldMapping = {} }) {
+async function createRoute({
+  slug,
+  name,
+  targetUrl,
+  httpMethod = 'POST',
+  fieldMapping = {},
+  variables = {},
+  responseTemplate = null
+}) {
   const { rows } = await pool.query(
-    `INSERT INTO integration_routes (slug, name, target_url, http_method, field_mapping)
-     VALUES ($1, $2, $3, $4, $5)
+    `INSERT INTO integration_routes (slug, name, target_url, http_method, field_mapping, variables, response_template)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
      RETURNING *`,
-    [slug, name, targetUrl, httpMethod.toUpperCase(), JSON.stringify(fieldMapping)]
+    [
+      slug,
+      name,
+      targetUrl,
+      httpMethod.toUpperCase(),
+      JSON.stringify(fieldMapping),
+      JSON.stringify(variables),
+      responseTemplate ? JSON.stringify(responseTemplate) : null
+    ]
   );
   return rows[0];
 }

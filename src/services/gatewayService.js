@@ -19,8 +19,11 @@ async function dispatchToMes(slug, rawPayload) {
     throw new IntegrationError(`Rota de integração '${slug}' está desativada.`, 403);
   }
 
-  // Transforma o payload externo (ERP/CLP) para o formato esperado pelo MES
-  const adaptedPayload = transformPayload(rawPayload, route.field_mapping);
+  const adaptedPayload = transformPayload(rawPayload, {
+    fieldMapping: route.field_mapping,
+    variables: route.variables,
+    responseTemplate: route.response_template
+  });
 
   try {
     const response = await axios({

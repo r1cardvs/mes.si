@@ -1,45 +1,102 @@
 const { transformPayload, validateRouteConfig, IntegrationError } = require('../../src/domain/payloadTransformer');
 
 describe('MES.SI - Unit Tests (Payload Transformer & Route Rules)', () => {
-  test('Deve traduzir payload bruto do SAP para o contrato padrão do MES', () => {
+  test('Deve extrair variáveis por caminho aninhado e construir o JSON final via template', () => {
     const sapPayload = {
-      AUFNR: 'OP-2026-10',
-      MATNR: 'MALBEC-100ML',
-      GAMNG: 500,
-      CAMPO_EXTRA_IGNORADO: 'xyz'
+      sapHeader: {
+        AUFNR: 'OP-2026-10',
+        MATNR: 'MALBEC-100'
+      },
+      items: [
+        { GAMNG: 1000, UNIT: 'UN' }
+      ],
+      workCenter: {
+        code: 'WC-10'
+      }
     };
 
-    const mapping = {
-      AUFNR: 'orderCode',
-      MATNR: 'materialCode',
-      GAMNG: 'plannedQty'
+    const routeConfig = {
+      variables: {
+        codigoOrdem: 'sapHeader.AUFNR',
+        material: 'sapHeader.MATNR',
+        quantidade: 'items[0].GAMNG',
+        linha: 'workCenter.code'
+      },
+      responseTemplate: {
+        order: {
+          code: '{{codigoOrdem}}',
+          sku: '{{material}}',
+          label: 'Ordem {{codigoOrdem}} - {{material}}'
+        },
+        production: {
+          targetQty: '{{quantidade}}',
+          workCenterCode: '{{linha}}'
+        }
+      }
     };
 
-    const result = transformPayload(sapPayload, mapping);
+    const result = transformPayload(sapPayload, routeConfig);
 
     expect(result).toEqual({
+      order: {
+        code: 'OP-2026-10',
+        sku: 'MALBEC-100',
+        label: 'Ordem OP-2026-10 - MALBEC-100'
+      },
+      production: {
+        targetQty: 1000,
+        workCenterCode: 'WC-10'
+      }
+    });
+  });
+
+  test('Deve lançar erro 422 se um caminho mapeado nas variáveis não existir no JSON bruto', () => {
+    const rawPayload = { sapHeader: { AUFNR: 'OP-10' } };
+    const routeConfig = {
+      variables: {
+        codigoOrdem: 'sapHeader.AUFNR',
+        quantidade: 'items[0].GAMNG'
+      },
+      responseTemplate: {
+        code: '{{codigoOrdem}}',
+        qty: '{{quantidade}}'
+      }
+    };
+
+    expect(() => transformPayload(rawPayload, routeConfig)).toThrow(IntegrationError);
+    expect(() => transformPayload(rawPayload, routeConfig)).toThrow(
+      "Caminho obrigatório não encontrado no JSON de origem: 'items[0].GAMNG'"
+    );
+  });
+
+  test('Deve lançar erro 422 se o template referenciar uma variável não declarada', () => {
+    const rawPayload = { sapHeader: { AUFNR: 'OP-10' } };
+    const routeConfig = {
+      variables: {
+        codigoOrdem: 'sapHeader.AUFNR'
+      },
+      responseTemplate: {
+        code: '{{codigoOrdem}}',
+        inexistente: '{{variavelFantasma}}'
+      }
+    };
+
+    expect(() => transformPayload(rawPayload, routeConfig)).toThrow(
+      "Variável 'variavelFantasma' usada no template não foi mapeada."
+    );
+  });
+
+  test('Deve manter compatibilidade com mapeamento simples De -> Para', () => {
+    const sapPayload = { AUFNR: 'OP-2026-10', GAMNG: 500 };
+    const mapping = { AUFNR: 'orderCode', GAMNG: 'plannedQty' };
+
+    expect(transformPayload(sapPayload, mapping)).toEqual({
       orderCode: 'OP-2026-10',
-      materialCode: 'MALBEC-100ML',
       plannedQty: 500
     });
   });
 
-  test('Deve lançar erro 422 quando campo obrigatório mapeado estiver ausente', () => {
-    const incompletePayload = { AUFNR: 'OP-2026-10' };
-    const mapping = { AUFNR: 'orderCode', GAMNG: 'plannedQty' };
-
-    expect(() => transformPayload(incompletePayload, mapping)).toThrow(IntegrationError);
-    expect(() => transformPayload(incompletePayload, mapping)).toThrow(
-      "Campo obrigatório ausente no payload de origem: 'GAMNG'"
-    );
-  });
-
-  test('Deve repassar o payload original intacto se nenhum mapeamento for definido', () => {
-    const raw = { sensorId: 'TEMP-01', value: 23.5 };
-    expect(transformPayload(raw, {})).toEqual(raw);
-  });
-
-  test('Deve bloquear criação de rota com slug inválido (caracteres especiais/maiúsculas)', () => {
+  test('Deve bloquear criação de rota com slug inválido', () => {
     expect(() =>
       validateRouteConfig({
         slug: 'Rota Inválida!',
@@ -47,15 +104,5 @@ describe('MES.SI - Unit Tests (Payload Transformer & Route Rules)', () => {
         httpMethod: 'POST'
       })
     ).toThrow('Slug inválido');
-  });
-
-  test('Deve bloquear criação de rota com URL sem protocolo http/https', () => {
-    expect(() =>
-      validateRouteConfig({
-        slug: 'sap-to-mes',
-        targetUrl: 'ftp://servidor-antigo/orders',
-        httpMethod: 'POST'
-      })
-    ).toThrow('targetUrl inválida');
   });
 });

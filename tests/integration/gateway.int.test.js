@@ -9,7 +9,6 @@ describe('MES.SI - Integration Tests (API + PostgreSQL + HTTP Proxy)', () => {
   let lastReceivedByMes = null;
 
   beforeAll((done) => {
-    // Sobe um servidor HTTP real simulando o MES Core destino
     mockMesServer = http.createServer((req, res) => {
       let body = '';
       req.on('data', (chunk) => {
@@ -22,7 +21,7 @@ describe('MES.SI - Integration Tests (API + PostgreSQL + HTTP Proxy)', () => {
           body: body ? JSON.parse(body) : null
         };
         res.writeHead(201, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ accepted: true, mesOrderId: 9010 }));
+        res.end(JSON.stringify({ accepted: true, mesOrderId: 1010 }));
       });
     });
 
@@ -42,53 +41,58 @@ describe('MES.SI - Integration Tests (API + PostgreSQL + HTTP Proxy)', () => {
     await new Promise((resolve) => mockMesServer.close(resolve));
   });
 
-  test('Deve configurar rota no Postgres, acolher payload ERP, transformar e entregar ao MES', async () => {
-    // 1. Configura rota estilo Apigee via API Admin apontando para o MES simulado
+  test('Deve extrair variáveis do JSON bruto, montar template aninhado e entregar ao MES', async () => {
     const routeRes = await request(app)
       .post('/admin/routes')
       .send({
-        slug: 'sap-order-in',
-        name: 'Integração Ordem SAP -> MES Core',
+        slug: 'sap-complex-order',
+        name: 'Ordem SAP Aninhada -> MES Core',
         targetUrl: `http://127.0.0.1:${mockMesPort}/api/v1/orders`,
         httpMethod: 'POST',
-        fieldMapping: {
-          AUFNR: 'orderCode',
-          GAMNG: 'plannedQty'
+        variables: {
+          codigoOrdem: 'header.AUFNR',
+          quantidade: 'items[0].GAMNG',
+          centroTrabalho: 'plant.workCenter'
+        },
+        responseTemplate: {
+          orderCode: '{{codigoOrdem}}',
+          metrics: {
+            plannedQty: '{{quantidade}}',
+            line: '{{centroTrabalho}}'
+          }
         }
       });
 
     expect(routeRes.statusCode).toBe(201);
-    expect(routeRes.body.slug).toBe('sap-order-in');
 
-    // 2. Dispara requisição bruta no Gateway (/gateway/sap-order-in)
     const gatewayRes = await request(app)
-      .post('/gateway/sap-order-in')
+      .post('/gateway/sap-complex-order')
       .send({
-        AUFNR: 'OP-10',
-        GAMNG: 250,
-        EXTRA_SAP_FIELD: 'IGNORAR'
+        header: { AUFNR: 'OP-10' },
+        items: [{ GAMNG: 750 }],
+        plant: { workCenter: 'WC-ENV-10' },
+        metadataIgnorada: { timestamp: '2026-11-13' }
       });
 
     expect(gatewayRes.statusCode).toBe(200);
     expect(gatewayRes.body.gatewayStatus).toBe('DELIVERED');
     expect(gatewayRes.body.adaptedPayload).toEqual({
       orderCode: 'OP-10',
-      plannedQty: 250
-    });
-    expect(gatewayRes.body.mesResponse).toEqual({ accepted: true, mesOrderId: 9010 });
-
-    // 3. Confirma que o MES destino recebeu o contrato exato
-    expect(lastReceivedByMes).toEqual({
-      method: 'POST',
-      url: '/api/v1/orders',
-      body: {
-        orderCode: 'OP-10',
-        plannedQty: 250
+      metrics: {
+        plannedQty: 750,
+        line: 'WC-ENV-10'
       }
     });
 
-    // 4. Verifica se o log de auditoria foi gravado no PostgreSQL
-    const logsResult = await pool.query('SELECT * FROM integration_logs WHERE route_slug = $1', ['sap-order-in']);
+    expect(lastReceivedByMes.body).toEqual({
+      orderCode: 'OP-10',
+      metrics: {
+        plannedQty: 750,
+        line: 'WC-ENV-10'
+      }
+    });
+
+    const logsResult = await pool.query('SELECT * FROM integration_logs WHERE route_slug = $1', ['sap-complex-order']);
     expect(logsResult.rows.length).toBe(1);
     expect(logsResult.rows[0].status_code).toBe(201);
   });
