@@ -11,22 +11,28 @@
   <img src="https://img.shields.io/badge/Nº-10-75AADB?style=flat&logoColor=white" alt="Número 10" />
   <img src="https://img.shields.io/badge/Node.js-24-339933?style=flat&logo=node.js&logoColor=white" alt="Node.js 24" />
   <img src="https://img.shields.io/badge/PostgreSQL-15-4169E1?style=flat&logo=postgresql&logoColor=white" alt="PostgreSQL 15" />
+  <img src="https://img.shields.io/badge/Swagger-UI-85EA2D?style=flat&logo=swagger&logoColor=black" alt="Swagger UI" />
   <img src="https://img.shields.io/badge/Docker-GHCR-2496ED?style=flat&logo=docker&logoColor=white" alt="Docker GHCR" />
 </p>
 
-> **API Gateway & Integration Broker** dedicado ao ecossistema **MES (Manufacturing Execution System)** — inspirado no modelo de roteamento e transformação dinâmica de contratos estilo Apigee, projetado para conectar ERPs (ex: SAP), sensores e sistemas de chão de fábrica sem atritos (*Seamless Integration*).
+> **API Gateway & Integration Broker** dedicado ao ecossistema **MES (Manufacturing Execution System)** — inspirado no modelo de políticas e roteamento dinâmico estilo Apigee, projetado para conectar ERPs (ex: SAP), sensores e sistemas de chão de fábrica com transformação bidirecional de contratos (*Seamless Integration*).
 
 ---
 
-## Arquitetura da Solução
+## Arquitetura da Solução (Fluxo Bidirecional)
 
-O **MES.SI** atua como camada intermediária configurável: recebe payloads brutos de sistemas externos via endpoints dinâmicos (`/gateway/:slug`), valida e traduz os campos conforme o contrato mapeado no PostgreSQL (`field_mapping`) e encaminha a requisição adaptada ao endpoint destino do MES, registrando telemetria e auditoria.
+O **MES.SI** atua como camada intermediária configurável entre sistemas corporativos e o chão de fábrica:
+
+1. **Inbound (ERP -> MES):** Recebe payloads brutos em `/gateway/:slug`, extrai variáveis por caminhos JSONPath (`variables`) e monta o contrato esperado pelo MES (`responseTemplate`).
+2. **Outbound (MES -> ERP):** Recebe a resposta do MES destino, extrai variáveis de retorno (`outputVariables`) e reconstrói a resposta no formato esperado pelo chamador (`outputTemplate`), gravando auditoria e latência no PostgreSQL.
 
 ```mermaid
 flowchart LR
-    ERP["ERP / SAP / CLP\n(Payload Bruto)"] -->|POST /gateway/:slug| GW["MES.SI Gateway\n(Node.js + Express)"]
-    GW <-->|Busca Rota & Grava Log| DB[("PostgreSQL 15\nintegration_routes\nintegration_logs")]
-    GW -->|Payload Adaptado\nDe -> Para| MES["MES Core\n(Target Endpoint)"]
+    ERP["ERP / SAP / CLP\n(Payload Bruto)"] -->|1. POST /gateway/:slug| GW["MES.SI Gateway\n(Node.js + Express)"]
+    GW <-->|2. Busca Rota & Grava Log| DB[("PostgreSQL 15\nintegration_routes\nintegration_logs")]
+    GW -->|3. Inbound: adaptedRequest\nvariables + responseTemplate| MES["MES Core\n(Target Endpoint)"]
+    MES -->|4. Retorno Bruto do MES| GW
+    GW -->|5. Outbound: adaptedResponse\noutputVariables + outputTemplate| ERP
 
     style GW fill:#75AADB,stroke:#1D3557,stroke-width:2px,color:#0B132B
     style ERP fill:#FFFFFF,stroke:#75AADB,stroke-width:2px,color:#0B132B
