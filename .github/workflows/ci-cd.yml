@@ -1,0 +1,162 @@
+name: MES.SI - CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  # =========================================================
+  # BLOCO 1 & 2 (SAKAUE): CI + TESTE UNITÁRIO
+  # =========================================================
+  ci-lint-and-unit:
+    name: 1. CI - Lint & Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Static Code Analysis (ESLint)
+        run: npm run lint
+
+      - name: Run Unit Tests & Coverage
+        run: npm run test:unit
+
+  # =========================================================
+  # BLOCO 1 & 2 (SAKAUE): CI + TESTE DE INTEGRAÇÃO
+  # =========================================================
+  ci-integration-tests:
+    name: 2. CI - Integration Tests (API + Postgres)
+    runs-on: ubuntu-latest
+    needs: ci-lint-and-unit
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: mes_user
+          POSTGRES_PASSWORD: mes_pass
+          POSTGRES_DB: mes_si
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgres://mes_user:mes_pass@localhost:5432/mes_si
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Initialize PostgreSQL Schema
+        run: |
+          sudo apt-get update && sudo apt-get install -y postgresql-client
+          PGPASSWORD=mes_pass psql -h localhost -U mes_user -d mes_si -f db/init.sql
+
+      - name: Run Integration Tests
+        run: npm run test:integration
+
+  # =========================================================
+  # BLOCO 1 & 2 (SAKAUE): CI + TESTE DE SISTEMA (E2E)
+  # =========================================================
+  ci-system-tests:
+    name: 3. CI - System Tests (Docker Compose E2E)
+    runs-on: ubuntu-latest
+    needs: ci-integration-tests
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Boot full MES.SI stack (API + DB)
+        run: docker compose up -d --build
+
+      - name: Wait for API readiness
+        run: |
+          for i in {1..15}; do
+            if curl -s http://localhost:3000/health | grep -q "UP"; then
+              echo "MES.SI is UP!"
+              break
+            fi
+            sleep 2
+          done
+
+      - name: Run System Tests against live container
+        env:
+          SYSTEM_TEST_URL: http://localhost:3000
+        run: npm run test:system
+
+      - name: Tear down stack
+        if: always()
+        run: docker compose down -v
+
+  # =========================================================
+  # BLOCO 3 (SAKAUE): DEPLOY AUTOMÁTICO (CD)
+  # =========================================================
+  cd-auto-deploy:
+    name: 4. CD - Automatic Deploy (Container Registry)
+    runs-on: ubuntu-latest
+    needs: ci-system-tests
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry (GHCR)
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Docker metadata (tags & labels)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=latest
+            type=sha,prefix=build-
+
+      - name: Build and Push Production Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}

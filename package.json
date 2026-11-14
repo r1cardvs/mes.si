@@ -1,0 +1,36 @@
+{
+  "name": "mes.si",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "lint": "eslint src tests",
+    "test:unit": "jest tests/unit --coverage",
+    "test:integration": "jest tests/integration --runInBand",
+    "test:system": "jest tests/system --runInBand"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/r1cardvs/mes.si.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/r1cardvs/mes.si/issues"
+  },
+  "homepage": "https://github.com/r1cardvs/mes.si#readme",
+  "dependencies": {
+    "axios": "^1.21.1",
+    "express": "^5.3.0",
+    "pg": "^8.23.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.15.0",
+    "jest": "^30.5.2",
+    "supertest": "^7.3.2"
+  }
+}

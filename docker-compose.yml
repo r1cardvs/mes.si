@@ -1,0 +1,27 @@
+services:
+  db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: mes_user
+      POSTGRES_PASSWORD: mes_pass
+      POSTGRES_DB: mes_si
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mes_user -d mes_si"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: postgres://mes_user:mes_pass@db:5432/mes_si
+      PORT: 3000
+    depends_on:
+      db:
+        condition: service_healthy
