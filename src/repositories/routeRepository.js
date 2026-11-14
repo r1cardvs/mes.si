@@ -11,11 +11,16 @@ async function createRoute({
   httpMethod = 'POST',
   fieldMapping = {},
   variables = {},
-  responseTemplate = null
+  responseTemplate = null,
+  outputVariables = {},
+  outputTemplate = null
 }) {
   const { rows } = await pool.query(
-    `INSERT INTO integration_routes (slug, name, target_url, http_method, field_mapping, variables, response_template)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)
+    `INSERT INTO integration_routes (
+      slug, name, target_url, http_method, field_mapping,
+      variables, response_template, output_variables, output_template
+    )
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
      RETURNING *`,
     [
       slug,
@@ -24,7 +29,9 @@ async function createRoute({
       httpMethod.toUpperCase(),
       JSON.stringify(fieldMapping),
       JSON.stringify(variables),
-      responseTemplate ? JSON.stringify(responseTemplate) : null
+      responseTemplate ? JSON.stringify(responseTemplate) : null,
+      JSON.stringify(outputVariables),
+      outputTemplate ? JSON.stringify(outputTemplate) : null
     ]
   );
   return rows[0];

@@ -43,13 +43,25 @@ async function dispatchToMes(slug, rawPayload) {
       durationMs
     });
 
+    const adaptedResponse = route.output_template
+      ? transformPayload(response.data, {
+          variables: route.output_variables,
+          responseTemplate: route.output_template
+        })
+      : response.data;
+
     return {
       gatewayStatus: 'DELIVERED',
       route: slug,
-      adaptedPayload,
-      mesResponse: response.data
+      adaptedRequest: adaptedPayload,
+      adaptedResponse,
+      rawMesResponse: response.data
     };
   } catch (err) {
+    if (err instanceof IntegrationError) {
+      throw err;
+    }
+
     const statusCode = err.response?.status || 502;
     const durationMs = Date.now() - start;
 

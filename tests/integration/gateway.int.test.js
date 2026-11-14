@@ -21,7 +21,15 @@ describe('MES.SI - Integration Tests (API + PostgreSQL + HTTP Proxy)', () => {
           body: body ? JSON.parse(body) : null
         };
         res.writeHead(201, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ accepted: true, mesOrderId: 1010 }));
+        res.end(
+          JSON.stringify({
+            mesInternalId: 'MES-9910',
+            executionStatus: 'SCHEDULED',
+            workCenter: {
+              estimatedMinutes: 45
+            }
+          })
+        );
       });
     });
 
@@ -41,12 +49,12 @@ describe('MES.SI - Integration Tests (API + PostgreSQL + HTTP Proxy)', () => {
     await new Promise((resolve) => mockMesServer.close(resolve));
   });
 
-  test('Deve extrair variáveis do JSON bruto, montar template aninhado e entregar ao MES', async () => {
+  test('Deve executar fluxo bidirecional completo (Inbound + Outbound) e gravar auditoria no Postgres', async () => {
     const routeRes = await request(app)
       .post('/admin/routes')
       .send({
-        slug: 'sap-complex-order',
-        name: 'Ordem SAP Aninhada -> MES Core',
+        slug: 'sap-bidirectional-order',
+        name: 'Ordem SAP <-> MES Core Bidirecional',
         targetUrl: `http://127.0.0.1:${mockMesPort}/api/v1/orders`,
         httpMethod: 'POST',
         variables: {
@@ -60,27 +68,51 @@ describe('MES.SI - Integration Tests (API + PostgreSQL + HTTP Proxy)', () => {
             plannedQty: '{{quantidade}}',
             line: '{{centroTrabalho}}'
           }
+        },
+        outputVariables: {
+          idMes: 'mesInternalId',
+          situacao: 'executionStatus',
+          tempo: 'workCenter.estimatedMinutes'
+        },
+        outputTemplate: {
+          SAP_RETURN: {
+            MES_DOC_NUM: '{{idMes}}',
+            STATUS_TEXT: 'Ordem {{situacao}} ({{tempo}} min)'
+          }
         }
       });
 
     expect(routeRes.statusCode).toBe(201);
 
     const gatewayRes = await request(app)
-      .post('/gateway/sap-complex-order')
+      .post('/gateway/sap-bidirectional-order')
       .send({
         header: { AUFNR: 'OP-10' },
         items: [{ GAMNG: 750 }],
         plant: { workCenter: 'WC-ENV-10' },
-        metadataIgnorada: { timestamp: '2026-11-13' }
+        metadataIgnorada: { timestamp: '2026-11-14' }
       });
 
     expect(gatewayRes.statusCode).toBe(200);
     expect(gatewayRes.body.gatewayStatus).toBe('DELIVERED');
-    expect(gatewayRes.body.adaptedPayload).toEqual({
+    expect(gatewayRes.body.adaptedRequest).toEqual({
       orderCode: 'OP-10',
       metrics: {
         plannedQty: 750,
         line: 'WC-ENV-10'
+      }
+    });
+    expect(gatewayRes.body.adaptedResponse).toEqual({
+      SAP_RETURN: {
+        MES_DOC_NUM: 'MES-9910',
+        STATUS_TEXT: 'Ordem SCHEDULED (45 min)'
+      }
+    });
+    expect(gatewayRes.body.rawMesResponse).toEqual({
+      mesInternalId: 'MES-9910',
+      executionStatus: 'SCHEDULED',
+      workCenter: {
+        estimatedMinutes: 45
       }
     });
 
@@ -92,7 +124,7 @@ describe('MES.SI - Integration Tests (API + PostgreSQL + HTTP Proxy)', () => {
       }
     });
 
-    const logsResult = await pool.query('SELECT * FROM integration_logs WHERE route_slug = $1', ['sap-complex-order']);
+    const logsResult = await pool.query('SELECT * FROM integration_logs WHERE route_slug = $1', ['sap-bidirectional-order']);
     expect(logsResult.rows.length).toBe(1);
     expect(logsResult.rows[0].status_code).toBe(201);
   });
