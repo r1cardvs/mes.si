@@ -3,7 +3,7 @@ const swaggerDocument = {
   info: {
     title: 'MES.SI — Seamless Integration Gateway',
     version: '1.0.0',
-    description: 'API Gateway configurável estilo Apigee para roteamento, extração de variáveis por JSONPath e transformação dinâmica de payloads para o ecossistema MES.'
+    description: 'API Gateway configurável estilo Apigee para roteamento, extração de variáveis por JSONPath e transformação bidirecional de payloads para o ecossistema MES.'
   },
   servers: [
     {
@@ -13,8 +13,8 @@ const swaggerDocument = {
   ],
   tags: [
     { name: 'Health', description: 'Monitoramento e disponibilidade do serviço' },
-    { name: 'Admin - Rotas', description: 'Configuração de contratos e mapeamentos De -> Para' },
-    { name: 'Gateway', description: 'Recepção de payloads externos e envio adaptado ao MES' }
+    { name: 'Admin - Rotas', description: 'Configuração de contratos Inbound e Outbound' },
+    { name: 'Gateway', description: 'Recepção de payloads externos, adaptação e retorno traduzido' }
   ],
   paths: {
     '/health': {
@@ -48,7 +48,7 @@ const swaggerDocument = {
       },
       post: {
         tags: ['Admin - Rotas'],
-        summary: 'Configura uma nova rota de integração com variáveis e template JSON',
+        summary: 'Configura uma nova rota de integração bidirecional (Inbound + Outbound)',
         requestBody: {
           required: true,
           content: {
@@ -57,9 +57,9 @@ const swaggerDocument = {
                 type: 'object',
                 required: ['slug', 'name', 'targetUrl'],
                 properties: {
-                  slug: { type: 'string', example: 'sap-order-template' },
-                  name: { type: 'string', example: 'Ordem SAP Complexa -> Contrato MES' },
-                  targetUrl: { type: 'string', example: 'https://httpbin.org/post' },
+                  slug: { type: 'string', example: 'sap-to-mes-full' },
+                  name: { type: 'string', example: 'Fluxo Completo SAP <-> MES Core' },
+                  targetUrl: { type: 'string', example: 'https://mes-core-sim.free.beeceptor.com/api/v1/orders' },
                   httpMethod: { type: 'string', example: 'POST' },
                   variables: {
                     type: 'object',
@@ -82,6 +82,23 @@ const swaggerDocument = {
                         workCenterCode: '{{linha}}'
                       }
                     }
+                  },
+                  outputVariables: {
+                    type: 'object',
+                    example: {
+                      idMes: 'mesInternalId',
+                      situacao: 'executionStatus',
+                      tempoEstimado: 'workCenter.estimatedMinutes'
+                    }
+                  },
+                  outputTemplate: {
+                    type: 'object',
+                    example: {
+                      SAP_RETURN: {
+                        MES_DOC_NUM: '{{idMes}}',
+                        STATUS_TEXT: 'Ordem {{situacao}} com tempo previsto de {{tempoEstimado}} min'
+                      }
+                    }
                   }
                 }
               }
@@ -97,13 +114,13 @@ const swaggerDocument = {
     '/gateway/{slug}': {
       post: {
         tags: ['Gateway'],
-        summary: 'Acolhe o payload externo, aplica a transformação e encaminha ao MES destino',
+        summary: 'Acolhe o payload externo, adapta para o MES, recebe o retorno e traduz a resposta',
         parameters: [
           {
             name: 'slug',
             in: 'path',
             required: true,
-            schema: { type: 'string', example: 'sap-order-template' },
+            schema: { type: 'string', example: 'sap-to-mes-full' },
             description: 'Identificador único da rota configurada'
           }
         ],
@@ -130,7 +147,7 @@ const swaggerDocument = {
           }
         },
         responses: {
-          200: { description: 'Payload transformado e entregue ao MES destino' },
+          200: { description: 'Fluxo bidirecional executado com sucesso' },
           404: { description: 'Rota não encontrada' },
           422: { description: 'Erro de validação ou variável ausente no payload' },
           502: { description: 'Falha de comunicação com o endpoint destino do MES' }

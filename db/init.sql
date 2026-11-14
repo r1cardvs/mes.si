@@ -7,6 +7,8 @@ CREATE TABLE IF NOT EXISTS integration_routes (
     field_mapping JSONB NOT NULL DEFAULT '{}',
     variables JSONB NOT NULL DEFAULT '{}',
     response_template JSONB,
+    output_variables JSONB NOT NULL DEFAULT '{}',
+    output_template JSONB,
     active BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMP DEFAULT NOW()
 );
