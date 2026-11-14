@@ -1,5 +1,6 @@
-// src/app.js
 const express = require('express');
+const swaggerUi = require('swagger-ui-express');
+const swaggerDocument = require('./swagger');
 const repo = require('./repositories/routeRepository');
 const gatewayService = require('./services/gatewayService');
 const { IntegrationError } = require('./domain/payloadTransformer');
@@ -7,7 +8,8 @@ const { IntegrationError } = require('./domain/payloadTransformer');
 const app = express();
 app.use(express.json());
 
-// Healthcheck para Teste de Sistema e Docker
+app.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument));
+
 app.get('/health', (req, res) => {
   res.status(200).json({
     service: 'MES.SI - Seamless Integration Gateway',
@@ -15,7 +17,6 @@ app.get('/health', (req, res) => {
   });
 });
 
-// Administração de Rotas (Configuração estilo Apigee)
 app.get('/admin/routes', async (req, res) => {
   const routes = await repo.listRoutes();
   res.status(200).json(routes);
@@ -31,7 +32,6 @@ app.post('/admin/routes', async (req, res) => {
   }
 });
 
-// Gateway Dinâmico: acolhe payload externo, adapta e envia para o MES
 app.post('/gateway/:slug', async (req, res) => {
   try {
     const result = await gatewayService.dispatchToMes(req.params.slug, req.body);
