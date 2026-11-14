@@ -1,10 +1,12 @@
 CREATE TABLE IF NOT EXISTS integration_routes (
     id SERIAL PRIMARY KEY,
-    slug VARCHAR(60) UNIQUE NOT NULL,        
-    name VARCHAR(100) NOT NULL,                
+    slug VARCHAR(60) UNIQUE NOT NULL,
+    name VARCHAR(100) NOT NULL,
     target_url TEXT NOT NULL,
     http_method VARCHAR(10) NOT NULL DEFAULT 'POST',
     field_mapping JSONB NOT NULL DEFAULT '{}',
+    variables JSONB NOT NULL DEFAULT '{}',
+    response_template JSONB,
     active BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMP DEFAULT NOW()
 );
